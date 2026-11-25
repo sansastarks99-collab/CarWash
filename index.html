@@ -12,7 +12,7 @@ header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 16px
 .tabs button.on,nav button.on{background:var(--p);color:#fff;border-color:var(--p)}
 .who{margin-left:auto;color:var(--m);font-size:13px}
 nav{display:flex;gap:6px;overflow-x:auto;padding:10px 16px}
-button,input,select{font:inherit;padding:8px 12px;border:1px solid var(--b);border-radius:8px;background:var(--c);color:var(--t)}
+button,input,select,textarea{font:inherit;padding:8px 12px;border:1px solid var(--b);border-radius:8px;background:var(--c);color:var(--t)}
 button{cursor:pointer}button.p{background:var(--p);color:#fff;border-color:var(--p)}button.x{color:#dc2626}
 main{padding:0 16px 40px;max-width:1100px;margin:auto}
 .card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:14px;margin-bottom:14px}
@@ -23,7 +23,12 @@ main{padding:0 16px 40px;max-width:1100px;margin:auto}
 @media(max-width:760px){.pos{grid-template-columns:1fr}}
 table{width:100%;border-collapse:collapse}td,th{padding:7px 6px;border-bottom:1px solid var(--b);text-align:left}
 .login{max-width:340px;margin:12vh auto;display:grid;gap:10px}
-</style></head><body><div id="app"></div>
+#nota{display:none}
+@media print{body>*:not(#nota){display:none!important}#nota{display:block!important}body{background:#fff}}
+.rc{font:12px/1.4 monospace;color:#000;background:#fff;margin:0 auto;padding:2mm}
+.rc hr{border:0;border-top:1px dashed #000;margin:5px 0}.rc .r{display:flex;justify-content:space-between;gap:6px}.rc .c{text-align:center}
+.modal{position:fixed;inset:0;background:#0007;display:grid;place-items:center;z-index:9}
+</style></head><body><div id="app"></div><div id="nota"></div><div id="modal"></div>
 <script>
 const SB_URL='https://nashdxgxdmyeylismlfp.supabase.co', SB_KEY='sb_publishable_pmmXEpXNpB2TzMGWtW1Fmg_7hp0rKY6';
 const sb=supabase.createClient(SB_URL,SB_KEY);
@@ -34,11 +39,12 @@ const err=e=>{if(e){alert(e.message);return true}};
 const norm=s=>(s||'').toUpperCase().replace(/\s+/g,'');
 const dg=s=>+String(s??'').replace(/\D/g,'')||0, num=id=>dg(val(id));
 document.addEventListener('input',e=>{if(e.target.classList.contains('rp')){const d=e.target.value.replace(/\D/g,'');e.target.value=d?(+d).toLocaleString('id-ID'):''}});
-const NAV=[['kasir','Kasir'],['menu','Menu'],['belanja','Belanja'],['riwayat','Riwayat'],['laporan','Laporan'],['diskon','Diskon'],['member','Member'],['staff','Staff'],['auth','Authorization']];
+const NAV=[['kasir','Kasir'],['menu','Menu'],['belanja','Belanja'],['riwayat','Riwayat'],['laporan','Laporan'],['diskon','Diskon'],['member','Member'],['staff','Staff'],['nota','Nota'],['auth','Authorization']];
 let me,unit='carwash',page='kasir',cart=[],member=null,P=[],D=[];
 const mgr=()=>me.role==='manager', sell=()=>me.role!=='pemegang_saham';
 const PAGES={};
-const ALLOW={manager:NAV.map(n=>n[0]),kasir:['kasir','riwayat'],pemegang_saham:['laporan','riwayat','menu','belanja','diskon','member','staff','auth']};
+const LS={g:k=>{try{return localStorage.getItem(k)}catch{}},s:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
+const ALLOW={manager:NAV.map(n=>n[0]),kasir:['kasir','riwayat'],pemegang_saham:['nota','laporan','riwayat','menu','belanja','diskon','member','staff','auth']};
 
 async function boot(){
   const{data:{session}}=await sb.auth.getSession();
@@ -78,8 +84,29 @@ async function cariMember(){const pl=norm(val('plat'));if(!pl){member=null;$('#m
   const{data}=await sb.from('members').select('*').eq('plate',pl).maybeSingle();member=data;
   $('#mInfo').textContent=data?`✓ Member ${data.type}: ${data.name}`:'Plat belum terdaftar sebagai member';drawCart()}
 async function bayar(){if(!cart.length)return;const c=calc();
-  const{error}=await sb.rpc('create_sale',{p_unit:unit,p_plate:val('plat')||null,p_payment:val('bayar'),p_items:cart.map(i=>({id:i.id,qty:i.qty}))});
-  if(err(error))return;alert('Tersimpan: '+rp(c.total));PAGES.kasir()}
+  const{data:sid,error}=await sb.rpc('create_sale',{p_unit:unit,p_plate:val('plat')||null,p_payment:val('bayar'),p_items:cart.map(i=>({id:i.id,qty:i.qty}))});
+  if(err(error))return;
+  $('#modal').innerHTML=`<div class=modal><div class=card style="text-align:center;min-width:280px"><div class=v>✓ ${rp(c.total)}</div><p class=k>Transaksi #${sid} tersimpan</p><button class=p onclick="cetakId(${sid})">🖨️ Cetak nota</button> <button onclick="$('#modal').innerHTML='';PAGES.kasir()">Transaksi baru</button><p><label class=k><input type=checkbox ${LS.g('autoprint')=='1'?'checked':''} onchange="LS.s('autoprint',this.checked?'1':'0')"> Cetak otomatis</label></p></div></div>`;
+  if(LS.g('autoprint')=='1')cetakId(sid)}
+
+/* ---------- NOTA ---------- */
+function renderNota(d){const s=d.sale,t=d.tpl||{},w=t.width||58;
+  const R=(a,b)=>`<div class=r><span>${esc(a)}</span><span>${esc(b)}</span></div>`,n=v=>rp(v).replace('Rp ','');
+  return `<div class=rc style="width:${w-4}mm"><div class=c><b>${esc(t.name)}</b><br>${esc(t.address)}<br>${esc(t.phone)}</div><hr>`
+   +R('No. '+s.id,new Date(s.created_at).toLocaleString('id-ID',{dateStyle:'short',timeStyle:'short'}))
+   +(t.show_staff!==false&&s.staff?R('Kasir',s.staff):'')+(t.show_plate!==false&&s.plate?R('Plat',s.plate):'')+(s.member?R('Member',s.member):'')+'<hr>'
+   +d.items.map(i=>`<div>${esc(i.name)}</div>`+R(i.qty+' x '+n(i.price),n(i.qty*i.price))).join('')+'<hr>'
+   +R('Subtotal',n(s.subtotal))+(+s.discount?R('Diskon','-'+n(s.discount)):'')+`<b>${R('TOTAL',rp(s.total))}</b>`+R('Bayar',String(s.payment).toUpperCase())
+   +`<hr><div class=c>${esc(t.footer).replace(/\n/g,'<br>')}</div></div>`}
+function cetak(d){$('#nota').innerHTML=renderNota(d);let st=$('#pgs');if(!st){st=document.createElement('style');st.id='pgs';document.head.append(st)}
+  st.textContent=`@page{size:${d.tpl?.width||58}mm auto;margin:0}`;setTimeout(()=>window.print(),150)}
+async function cetakId(id){const{data,error}=await sb.rpc('get_receipt',{p_id:id});if(!err(error))cetak(data)}
+const SAMPLE={sale:{id:123,created_at:new Date(),plate:'AB1234CD',payment:'qris',subtotal:70000,discount:7000,total:63000,staff:'Nama Kasir',member:null},items:[{name:'Cuci Mobil',price:50000,qty:1},{name:'Wax',price:20000,qty:1}]};
+const tplForm=()=>({name:val('tn'),address:val('ta'),phone:val('tp'),footer:val('tf'),width:+val('tw'),show_staff:$('#ts').checked,show_plate:$('#tl').checked});
+function pv(){const t=tplForm();$('#pv').innerHTML=renderNota({...SAMPLE,tpl:t});$('#pv').style.width=t.width+'mm'}
+PAGES.nota=async()=>{const{data:t}=await sb.from('receipt_templates').select('*').eq('unit',unit).single();const ds=mgr()?'':'disabled';
+  $('#main').innerHTML=`<div class=pos><div class=card oninput=pv() onchange=pv()><b>Template nota ${unit}</b><div style="display:grid;gap:8px;margin-top:10px"><input id=tn placeholder="Nama usaha" value="${esc(t.name)}" ${ds}><input id=ta placeholder=Alamat value="${esc(t.address)}" ${ds}><input id=tp placeholder="No. telp" value="${esc(t.phone)}" ${ds}><textarea id=tf rows=3 placeholder="Teks bawah nota" ${ds}>${esc(t.footer)}</textarea><select id=tw ${ds}><option value=58 ${t.width==58?'selected':''}>Kertas 58 mm<option value=80 ${t.width==80?'selected':''}>Kertas 80 mm</select><label><input type=checkbox id=ts ${t.show_staff?'checked':''} ${ds}> Tampilkan nama kasir</label><label><input type=checkbox id=tl ${t.show_plate?'checked':''} ${ds}> Tampilkan plat nomor</label>${mgr()?'<button class=p onclick=saveTpl()>Simpan template</button>':''}<button onclick="cetak({...SAMPLE,tpl:tplForm()})">🖨️ Cetak contoh</button></div></div><div class=card><div class=k>Pratinjau</div><div id=pv style="margin:8px auto;overflow:auto;box-shadow:0 0 0 1px #ccc"></div></div></div>`;pv()};
+async function saveTpl(){if(!err((await sb.from('receipt_templates').update(tplForm()).eq('unit',unit)).error))alert('Template tersimpan')}
 
 /* ---------- MENU ---------- */
 PAGES.menu=async()=>{const{data=[]}=await sb.from('products').select('*').eq('unit',unit).order('name');
@@ -102,7 +129,7 @@ PAGES.riwayat=async()=>{
   const{data=[]}=await sb.from('v_riwayat').select('*').eq('unit',unit).order('created_at',{ascending:false});
   const ok=data.filter(x=>x.status!='batal');
   $('#main').innerHTML=`<div class=card><b>Penjualan hari ini (${unit}): ${ok.length} transaksi${me.role!='kasir'?' · '+rp(ok.reduce((a,x)=>a+ +x.total,0)):''}${ok.length<data.length?` · ${data.length-ok.length} batal`:''}</b><table>${data.map(x=>{const b=x.status=='batal',st=b?'text-decoration:line-through;opacity:.6':'',can=!b&&me.role!='pemegang_saham'&&(mgr()||x.staff_id==me.id);
-  return`<tr><td>${new Date(x.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}<td><span style="${st}">${esc(x.items)}</span>${x.plate?`<div class=k>${esc(x.plate)}</div>`:''}${b?`<div style="color:#dc2626;font-size:13px">Dibatalkan oleh ${esc(x.cancelled_by_name)}: ${esc(x.cancel_reason)}</div>`:''}<td>${x.payment}<td>${esc(x.staff_name)}<td><span style="${st}">${rp(x.total)}</span><td>${can?`<button class=x onclick="batal(${x.id})">Batalkan</button>`:''}</tr>`}).join('')}</table></div>`};
+  return`<tr><td>${new Date(x.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}<td><span style="${st}">${esc(x.items)}</span>${x.plate?`<div class=k>${esc(x.plate)}</div>`:''}${b?`<div style="color:#dc2626;font-size:13px">Dibatalkan oleh ${esc(x.cancelled_by_name)}: ${esc(x.cancel_reason)}</div>`:''}<td>${x.payment}<td>${esc(x.staff_name)}<td><span style="${st}">${rp(x.total)}</span><td>${!b?`<button onclick="cetakId(${x.id})">🖨️</button> `:''}${can?`<button class=x onclick="batal(${x.id})">Batalkan</button>`:''}</tr>`}).join('')}</table></div>`};
 async function batal(id){const r=prompt('Alasan pembatalan (wajib, tulis jelas):');if(r===null)return;
   if(r.trim().length<5)return alert('Alasan terlalu singkat (minimal 5 karakter).');
   if(!confirm('Batalkan transaksi ini? Tidak bisa dikembalikan.'))return;
