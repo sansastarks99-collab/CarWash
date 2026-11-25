@@ -32,6 +32,8 @@ const rp=n=>'Rp '+Math.round(n||0).toLocaleString('id-ID');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const err=e=>{if(e){alert(e.message);return true}};
 const norm=s=>(s||'').toUpperCase().replace(/\s+/g,'');
+const dg=s=>+String(s??'').replace(/\D/g,'')||0, num=id=>dg(val(id));
+document.addEventListener('input',e=>{if(e.target.classList.contains('rp')){const d=e.target.value.replace(/\D/g,'');e.target.value=d?(+d).toLocaleString('id-ID'):''}});
 const NAV=[['kasir','Kasir'],['menu','Menu'],['belanja','Belanja'],['riwayat','Riwayat'],['laporan','Laporan'],['diskon','Diskon'],['member','Member'],['staff','Staff'],['auth','Authorization']];
 let me,unit='carwash',page='kasir',cart=[],member=null,P=[],D=[];
 const mgr=()=>me.role==='manager', sell=()=>me.role!=='pemegang_saham';
@@ -81,24 +83,30 @@ async function bayar(){if(!cart.length)return;const c=calc();
 
 /* ---------- MENU ---------- */
 PAGES.menu=async()=>{const{data=[]}=await sb.from('products').select('*').eq('unit',unit).order('name');
-  $('#main').innerHTML=(mgr()?`<div class="card bar"><input id=pn placeholder="Nama menu"><input id=pp type=number placeholder="Harga jual"><input id=pc type=number placeholder="Modal/HPP"><button class=p onclick=addMenu()>Tambah</button></div>`:'')+
+  $('#main').innerHTML=(mgr()?`<div class="card bar"><input id=pn placeholder="Nama menu"><input id=pp class=rp inputmode=numeric placeholder="Harga jual"><input id=pc class=rp inputmode=numeric placeholder="Modal/HPP"><button class=p onclick=addMenu()>Tambah</button></div>`:'')+
   `<div class=card><table><tr><th>Menu (${unit})<th>Harga<th>HPP<th></tr>${data.map(x=>`<tr style="opacity:${x.active?1:.5}"><td>${esc(x.name)}<td>${rp(x.price)}<td>${rp(x.cost)}<td>${mgr()?`<button onclick="editMenu(${x.id},${x.price},${x.cost})">Ubah</button> <button onclick="tog('products',${x.id},${!x.active})">${x.active?'Nonaktif':'Aktif'}</button> <button class=x onclick="del('products',${x.id})">Hapus</button>`:''}</tr>`).join('')}</table></div>`};
-async function addMenu(){if(!val('pn')||!val('pp'))return;if(!err((await sb.from('products').insert({unit,name:val('pn'),price:+val('pp'),cost:+val('pc')||0})).error))go('menu')}
-async function editMenu(id,p,c){const price=prompt('Harga jual',p);if(price===null)return;const cost=prompt('HPP',c);if(cost===null)return;if(!err((await sb.from('products').update({price:+price,cost:+cost}).eq('id',id)).error))go('menu')}
+async function addMenu(){if(!val('pn')||!num('pp'))return;if(!err((await sb.from('products').insert({unit,name:val('pn'),price:num('pp'),cost:num('pc')})).error))go('menu')}
+async function editMenu(id,p,c){const price=prompt('Harga jual',p);if(price===null)return;const cost=prompt('HPP',c);if(cost===null)return;if(!err((await sb.from('products').update({price:dg(price),cost:dg(cost)}).eq('id',id)).error))go('menu')}
 async function tog(t,id,a){if(!err((await sb.from(t).update({active:a}).eq('id',id)).error))go(page)}
 async function del(t,id){if(confirm('Hapus?')&&!err((await sb.from(t).delete().eq('id',id)).error))go(page)}
 
 /* ---------- BELANJA ---------- */
 PAGES.belanja=async()=>{const t=new Date();t.setHours(0,0,0,0);
   const{data=[]}=await sb.from('expenses').select('*').gte('created_at',t.toISOString()).order('created_at',{ascending:false});
-  $('#main').innerHTML=(sell()?`<div class="card bar"><select id=eu><option value=carwash ${unit=='carwash'?'selected':''}>Carwash</option><option value=cafe ${unit=='cafe'?'selected':''}>Cafe</option></select><select id=em2><option value=tunai>Tunai</option><option value=qris>QRIS</option></select><input id=ea type=number placeholder=Jumlah><input id=en placeholder=Keterangan style="flex:1"><button class=p onclick=addExp()>Simpan</button></div>`:'')+
+  $('#main').innerHTML=(sell()?`<div class="card bar"><select id=eu><option value=carwash ${unit=='carwash'?'selected':''}>Carwash</option><option value=cafe ${unit=='cafe'?'selected':''}>Cafe</option></select><select id=em2><option value=tunai>Tunai</option><option value=qris>QRIS</option></select><input id=ea class=rp inputmode=numeric placeholder=Jumlah><input id=en placeholder=Keterangan style="flex:1"><button class=p onclick=addExp()>Simpan</button></div>`:'')+
   `<div class=card><b>Belanja hari ini</b><table>${data.map(x=>`<tr><td>${x.unit}<td>${x.method}<td>${esc(x.note)}<td>${rp(x.amount)}<td>${mgr()?`<button class=x onclick="del('expenses',${x.id})">Hapus</button>`:''}</tr>`).join('')}</table></div>`};
-async function addExp(){if(!val('ea'))return;if(!err((await sb.from('expenses').insert({unit:val('eu'),method:val('em2'),amount:+val('ea'),note:val('en'),staff_id:me.id})).error))go('belanja')}
+async function addExp(){if(!num('ea'))return;if(!err((await sb.from('expenses').insert({unit:val('eu'),method:val('em2'),amount:num('ea'),note:val('en'),staff_id:me.id})).error))go('belanja')}
 
 /* ---------- RIWAYAT ---------- */
 PAGES.riwayat=async()=>{
   const{data=[]}=await sb.from('v_riwayat').select('*').eq('unit',unit).order('created_at',{ascending:false});
-  $('#main').innerHTML=`<div class=card><b>Penjualan hari ini (${unit}): ${data.length} transaksi${me.role!='kasir'?' · '+rp(data.reduce((a,x)=>a+ +x.total,0)):''}</b><table>${data.map(x=>`<tr><td>${new Date(x.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}<td>${esc(x.items)}${x.plate?`<div class=k>${esc(x.plate)}</div>`:''}<td>${x.payment}<td>${esc(x.staff_name)}<td>${rp(x.total)}</tr>`).join('')}</table></div>`};
+  const ok=data.filter(x=>x.status!='batal');
+  $('#main').innerHTML=`<div class=card><b>Penjualan hari ini (${unit}): ${ok.length} transaksi${me.role!='kasir'?' · '+rp(ok.reduce((a,x)=>a+ +x.total,0)):''}${ok.length<data.length?` · ${data.length-ok.length} batal`:''}</b><table>${data.map(x=>{const b=x.status=='batal',st=b?'text-decoration:line-through;opacity:.6':'',can=!b&&me.role!='pemegang_saham'&&(mgr()||x.staff_id==me.id);
+  return`<tr><td>${new Date(x.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}<td><span style="${st}">${esc(x.items)}</span>${x.plate?`<div class=k>${esc(x.plate)}</div>`:''}${b?`<div style="color:#dc2626;font-size:13px">Dibatalkan oleh ${esc(x.cancelled_by_name)}: ${esc(x.cancel_reason)}</div>`:''}<td>${x.payment}<td>${esc(x.staff_name)}<td><span style="${st}">${rp(x.total)}</span><td>${can?`<button class=x onclick="batal(${x.id})">Batalkan</button>`:''}</tr>`}).join('')}</table></div>`};
+async function batal(id){const r=prompt('Alasan pembatalan (wajib, tulis jelas):');if(r===null)return;
+  if(r.trim().length<5)return alert('Alasan terlalu singkat (minimal 5 karakter).');
+  if(!confirm('Batalkan transaksi ini? Tidak bisa dikembalikan.'))return;
+  if(!err((await sb.rpc('cancel_sale',{p_id:id,p_reason:r})).error))go('riwayat')}
 
 /* ---------- LAPORAN ---------- */
 const D0=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x};
@@ -110,15 +118,16 @@ PAGES.laporan=async()=>{const td=new Date().toISOString().slice(0,10);
   $('#main').innerHTML=`<div class="card bar"><select id=rk onchange=lap()><option value=today>Hari ini<option value=yest>Kemarin<option value=month>Bulan ini<option value=last>Bulan lalu<option value=custom>Range tanggal</select><input type=date id=from value=${td}><input type=date id=to value=${td}><select id=ru onchange=lap()><option value=all>Semua unit<option value=carwash>Carwash<option value=cafe>Cafe</select><button class=p onclick=lap()>Tampilkan</button></div><div id=rep></div>`;lap()};
 const sum=(a,f)=>a.reduce((s,x)=>s+ +f(x),0);
 async function lap(){const[a,b]=range(val('rk')),u=val('ru');
-  let q1=sb.from('sales').select('*,sale_items(*)').gte('created_at',a.toISOString()).lt('created_at',b.toISOString()).limit(5000),q2=sb.from('expenses').select('*').gte('created_at',a.toISOString()).lt('created_at',b.toISOString()).limit(5000);
-  if(u!='all'){q1=q1.eq('unit',u);q2=q2.eq('unit',u)}
-  const[{data:S=[]},{data:E=[]}]=await Promise.all([q1,q2]);
+  let q1=sb.from('sales').select('*,sale_items(*)').eq('status','selesai').gte('created_at',a.toISOString()).lt('created_at',b.toISOString()).limit(5000),q2=sb.from('expenses').select('*').gte('created_at',a.toISOString()).lt('created_at',b.toISOString()).limit(5000);
+  let q3=sb.from('sales').select('total').eq('status','batal').gte('created_at',a.toISOString()).lt('created_at',b.toISOString());
+  if(u!='all'){q1=q1.eq('unit',u);q2=q2.eq('unit',u);q3=q3.eq('unit',u)}
+  const[{data:S=[]},{data:E=[]},{data:BT=[]}]=await Promise.all([q1,q2,q3]);
   const omzet=sum(S,x=>x.total),belanja=sum(E,x=>x.amount),items=S.flatMap(x=>x.sale_items),hpp=sum(items,i=>i.cost*i.qty);
   const top={};items.forEach(i=>{top[i.name]=(top[i.name]||0)+i.qty});
   const by=(arr,k,f)=>{const o={};arr.forEach(x=>o[x[k]]=(o[x[k]]||0)+ +f(x));return o};
   const rows=o=>Object.entries(o).map(([k,v])=>`<tr><td>${esc(k)}<td>${typeof v=='number'&&v>1e3?rp(v):v}</tr>`).join('');
   const day=by(S.map(x=>({...x,d:x.created_at.slice(0,10)})),'d',x=>x.total);
-  $('#rep').innerHTML=`<div class=grid>${[['Omzet',rp(omzet)],['Total belanja',rp(belanja)],['Laba (omzet − belanja)',rp(omzet-belanja)],['Laba kotor (omzet − HPP)',rp(omzet-hpp)],['Total diskon',rp(sum(S,x=>x.discount))],['Transaksi',S.length],['Rata-rata/transaksi',rp(S.length?omzet/S.length:0)],['Dari member',S.filter(x=>x.member_id).length]].map(([k,v])=>`<div class=card><div class=k>${k}</div><div class=v>${v}</div></div>`).join('')}</div>
+  $('#rep').innerHTML=`<div class=grid>${[['Omzet',rp(omzet)],['Total belanja',rp(belanja)],['Laba (omzet − belanja)',rp(omzet-belanja)],['Laba kotor (omzet − HPP)',rp(omzet-hpp)],['Total diskon',rp(sum(S,x=>x.discount))],['Transaksi',S.length],['Rata-rata/transaksi',rp(S.length?omzet/S.length:0)],['Dari member',S.filter(x=>x.member_id).length],['Transaksi batal',BT.length+' ('+rp(sum(BT,x=>x.total))+')']].map(([k,v])=>`<div class=card><div class=k>${k}</div><div class=v>${v}</div></div>`).join('')}</div>
   <div class=grid style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))"><div class=card><b>Omzet per unit</b><table>${rows(by(S,'unit',x=>x.total))}</table></div><div class=card><b>Omzet per pembayaran</b><table>${rows(by(S,'payment',x=>x.total))}</table></div><div class=card><b>Belanja per metode</b><table>${rows(by(E,'method',x=>x.amount))}</table></div><div class=card><b>Menu terlaris (qty)</b><table>${rows(Object.fromEntries(Object.entries(top).sort((x,y)=>y[1]-x[1]).slice(0,8)))}</table></div><div class=card><b>Omzet per hari</b><table>${rows(day)}</table></div></div>`}
 
 /* ---------- DISKON ---------- */
