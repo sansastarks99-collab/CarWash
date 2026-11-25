@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kasir Carwash & Cafe</title>
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#2563eb">
+<link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Kasir">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <style>
 :root{--bg:#f5f6f8;--c:#fff;--t:#1b1f27;--m:#6b7280;--p:#2563eb;--b:#e5e7eb}
 @media(prefers-color-scheme:dark){:root{--bg:#12141a;--c:#1c1f27;--t:#e8eaf0;--m:#9aa1b0;--p:#4f8bff;--b:#2c303b}}
-*{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--t)}
+*{box-sizing:border-box}body{margin:0;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;font:15px system-ui,sans-serif;background:var(--bg);color:var(--t)}
 header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 16px;background:var(--c);border-bottom:1px solid var(--b)}
 .tabs button.on,nav button.on{background:var(--p);color:#fff;border-color:var(--p)}
 .who{margin-left:auto;color:var(--m);font-size:13px}
@@ -141,5 +143,6 @@ async function addStaff(){if(!val('se')||val('sp').length<6)return alert('Email 
   const{data,error}=await tmp.auth.signUp({email:val('se'),password:val('sp')});if(err(error))return;
   if(!err((await sb.from('staff').insert({id:data.user.id,name:val('sn'),email:val('se'),role:val('sr')})).error))go(page)}
 
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 boot();
 </script></body></html>
