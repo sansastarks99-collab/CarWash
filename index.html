@@ -34,6 +34,7 @@ const NAV=[['kasir','Kasir'],['menu','Menu'],['belanja','Belanja'],['riwayat','R
 let me,unit='carwash',page='kasir',cart=[],member=null,P=[],D=[];
 const mgr=()=>me.role==='manager', sell=()=>me.role!=='pemegang_saham';
 const PAGES={};
+const ALLOW={manager:NAV.map(n=>n[0]),kasir:['kasir','riwayat'],pemegang_saham:['laporan','riwayat','menu','belanja','diskon','member','staff','auth']};
 
 async function boot(){
   const{data:{session}}=await sb.auth.getSession();
@@ -47,22 +48,22 @@ async function login(){const{error}=await sb.auth.signInWithPassword({email:val(
 sb.auth.onAuthStateChange(e=>{if(e==='SIGNED_OUT')loginView()});
 
 function shell(){
-  $('#app').innerHTML=`<header><b>Kasir</b><div class=tabs>${['carwash','cafe'].map(u=>`<button class="${u==unit?'on':''}" onclick="setUnit('${u}')">${u=='carwash'?'🚗 Carwash':'☕ Cafe'}</button>`).join('')}</div><span class=who>${esc(me.name)} · ${me.role.replace('_',' ')} <button onclick="sb.auth.signOut()">Keluar</button></span></header><nav>${NAV.filter(n=>n[0]!='kasir'||sell()).map(n=>`<button id=n-${n[0]} onclick="go('${n[0]}')">${n[1]}</button>`).join('')}</nav><main id=main></main>`;
-  go(sell()?page:'laporan');
+  $('#app').innerHTML=`<header><b>Kasir</b><div class=tabs>${['carwash','cafe'].map(u=>`<button class="${u==unit?'on':''}" onclick="setUnit('${u}')">${u=='carwash'?'🚗 Carwash':'☕ Cafe'}</button>`).join('')}</div><span class=who>${esc(me.name)} · ${me.role.replace('_',' ')} <button onclick="sb.auth.signOut()">Keluar</button></span></header><nav>${NAV.filter(n=>ALLOW[me.role].includes(n[0])).map(n=>`<button id=n-${n[0]} onclick="go('${n[0]}')">${n[1]}</button>`).join('')}</nav><main id=main></main>`;
+  go(ALLOW[me.role].includes(page)?page:'laporan');
 }
 function setUnit(u){unit=u;shell()}
 async function go(p){page=p;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.id=='n-'+p));$('#main').innerHTML='Memuat...';await PAGES[p]()}
 
 /* ---------- KASIR ---------- */
 PAGES.kasir=async()=>{
-  const[p,d]=await Promise.all([sb.from('products').select('*').eq('unit',unit).eq('active',true).order('name'),sb.from('discounts').select('*').eq('active',true)]);
+  const[p,d]=await Promise.all([sb.from('v_menu').select('*').eq('unit',unit).order('name'),sb.from('discounts').select('*').eq('active',true)]);
   P=p.data||[];D=d.data||[];cart=[];member=null;
   $('#main').innerHTML=`<div class=pos><div class=grid>${P.map(x=>`<button class=pr onclick="add(${x.id})"><b>${esc(x.name)}</b><div class=k>${rp(x.price)}</div></button>`).join('')||'<p class=k>Belum ada menu. Tambah di tab Menu.</p>'}</div>
   <div class=card><div class=bar><input id=plat placeholder="Plat nomor (member)" style="flex:1"><button onclick=cariMember()>Cek</button></div><div id=mInfo class=k></div><div id=cart></div>
   <select id=bayar style="width:100%;margin:10px 0"><option value=tunai>Tunai</option><option value=qris>QRIS</option></select><button class=p style="width:100%" onclick=bayar()>Bayar</button></div></div>`;
   drawCart();
 };
-function add(id){const p=P.find(x=>x.id==id),i=cart.find(x=>x.id==id);i?i.qty++:cart.push({id,name:p.name,price:+p.price,cost:+p.cost,qty:1});drawCart()}
+function add(id){const p=P.find(x=>x.id==id),i=cart.find(x=>x.id==id);i?i.qty++:cart.push({id,name:p.name,price:+p.price,qty:1});drawCart()}
 function qty(id,d){const i=cart.find(x=>x.id==id);i.qty+=d;if(i.qty<1)cart=cart.filter(x=>x!=i);drawCart()}
 function calc(){const sub=cart.reduce((a,i)=>a+i.price*i.qty,0);
   const ds=D.filter(x=>(x.unit=='all'||x.unit==unit)&&(x.kind=='umum'||(member&&x.kind=='member_'+member.type)));
@@ -73,10 +74,8 @@ async function cariMember(){const pl=norm(val('plat'));if(!pl){member=null;$('#m
   const{data}=await sb.from('members').select('*').eq('plate',pl).maybeSingle();member=data;
   $('#mInfo').textContent=data?`✓ Member ${data.type}: ${data.name}`:'Plat belum terdaftar sebagai member';drawCart()}
 async function bayar(){if(!cart.length)return;const c=calc();
-  const{data:s,error}=await sb.from('sales').insert({unit,staff_id:me.id,member_id:member?.id||null,plate:member?.plate||norm(val('plat'))||null,subtotal:c.sub,discount:c.disc,total:c.total,payment:val('bayar')}).select().single();
-  if(err(error))return;
-  const r=await sb.from('sale_items').insert(cart.map(i=>({sale_id:s.id,name:i.name,price:i.price,cost:i.cost,qty:i.qty})));
-  if(err(r.error))return;alert('Tersimpan: '+rp(c.total));PAGES.kasir()}
+  const{error}=await sb.rpc('create_sale',{p_unit:unit,p_plate:val('plat')||null,p_payment:val('bayar'),p_items:cart.map(i=>({id:i.id,qty:i.qty}))});
+  if(err(error))return;alert('Tersimpan: '+rp(c.total));PAGES.kasir()}
 
 /* ---------- MENU ---------- */
 PAGES.menu=async()=>{const{data=[]}=await sb.from('products').select('*').eq('unit',unit).order('name');
@@ -95,9 +94,9 @@ PAGES.belanja=async()=>{const t=new Date();t.setHours(0,0,0,0);
 async function addExp(){if(!val('ea'))return;if(!err((await sb.from('expenses').insert({unit:val('eu'),method:val('em2'),amount:+val('ea'),note:val('en'),staff_id:me.id})).error))go('belanja')}
 
 /* ---------- RIWAYAT ---------- */
-PAGES.riwayat=async()=>{const t=new Date();t.setHours(0,0,0,0);
-  const{data=[]}=await sb.from('sales').select('*,sale_items(*),staff(name)').eq('unit',unit).gte('created_at',t.toISOString()).order('created_at',{ascending:false});
-  $('#main').innerHTML=`<div class=card><b>Penjualan hari ini (${unit}): ${data.length} transaksi · ${rp(data.reduce((a,x)=>a+ +x.total,0))}</b><table>${data.map(x=>`<tr><td>${new Date(x.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}<td>${x.sale_items.map(i=>esc(i.name)+' x'+i.qty).join(', ')}${x.plate?`<div class=k>${esc(x.plate)}</div>`:''}<td>${x.payment}<td>${esc(x.staff?.name)}<td>${rp(x.total)}</tr>`).join('')}</table></div>`};
+PAGES.riwayat=async()=>{
+  const{data=[]}=await sb.from('v_riwayat').select('*').eq('unit',unit).order('created_at',{ascending:false});
+  $('#main').innerHTML=`<div class=card><b>Penjualan hari ini (${unit}): ${data.length} transaksi${me.role!='kasir'?' · '+rp(data.reduce((a,x)=>a+ +x.total,0)):''}</b><table>${data.map(x=>`<tr><td>${new Date(x.created_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}<td>${esc(x.items)}${x.plate?`<div class=k>${esc(x.plate)}</div>`:''}<td>${x.payment}<td>${esc(x.staff_name)}<td>${rp(x.total)}</tr>`).join('')}</table></div>`};
 
 /* ---------- LAPORAN ---------- */
 const D0=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x};
